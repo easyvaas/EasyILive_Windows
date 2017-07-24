@@ -125,7 +125,6 @@
     <ClInclude Include="Dialog\AddWindowDialog.h" />
     <ClInclude Include="Dialog\AGVideoWnd.h" />
     <ClInclude Include="Dialog\ChatUserDlg.h" />
-    <ClInclude Include="Dialog\MessageDlg.h" />
     <ClInclude Include="Dialog\SetDlg.h" />
     <ClInclude Include="Dialog\WndSelDlg.h" />
     <ClInclude Include="EVDemoCallBack.h" />
@@ -145,7 +144,6 @@
     <ClCompile Include="Dialog\AddWindowDialog.cpp" />
     <ClCompile Include="Dialog\AGVideoWnd.cpp" />
     <ClCompile Include="Dialog\ChatUserDlg.cpp" />
-    <ClCompile Include="Dialog\MessageDlg.cpp" />
     <ClCompile Include="Dialog\SetDlg.cpp" />
     <ClCompile Include="Dialog\WndSelDlg.cpp" />
     <ClCompile Include="EVDemoCallBack.cpp" />

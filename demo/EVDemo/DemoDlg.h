@@ -1,6 +1,5 @@
 #pragma once
 #include "afxcmn.h"
-#include "Dialog/MessageDlg.h"
 #include "afxwin.h"
 #include "Dialog/ChatUserDlg.h"
 
@@ -55,10 +54,8 @@ private:
 	CSliderCtrl		m_ctrMicrop;
 	CSliderCtrl		m_ctrDestop;
 
-	CMessageDlg		m_dlgMessage;
 	CChatUserDlg	m_dlgChatUser;
 public:
-	CEdit m_edtPushUrl;
 	afx_msg void OnBnClickedSetButton();
 	afx_msg void OnBnClickedWindowsButton();
 	afx_msg void OnBnClickedWhiteButton();

@@ -137,6 +137,9 @@ private:
 
 	bool  m_bFirstJoinChannel = true;
 	bool  m_bJoinChannel = false;
+
+	DWORD   m_nReceiveBadNetCount = 0; //接收网络太差104警告次数
+	const   DWORD   MAX_RECV_BADNET_COUNT = 5;
 public:
 
 	virtual BOOL OnInitDialog();
@@ -169,6 +172,7 @@ public:
 	afx_msg LRESULT OnEIDUserAuth(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnEIDEVJoinChannel(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnEIDEVLeaveChannel(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnEIDBadNetWork(WPARAM wParam, LPARAM lParam);
 
 	
 	

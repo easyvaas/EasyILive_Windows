@@ -158,6 +158,8 @@ BEGIN_MESSAGE_MAP(CChatUserDlg, CDialogEx)
 	ON_MESSAGE(WM_MSGID(EID_EV_USER_JOIN), &CChatUserDlg::OnEIDEVJoinChannel)
 	ON_MESSAGE(WM_MSGID(EID_EV_USER_LEAVE), &CChatUserDlg::OnEIDEVLeaveChannel)
 
+	ON_MESSAGE(WM_MSGID(EID_EV_BAD_NETWORK), &CChatUserDlg::OnEIDBadNetWork)
+
 
 	ON_WM_SIZE()
 	ON_WM_SHOWWINDOW()
@@ -178,15 +180,17 @@ LRESULT CChatUserDlg::OnJoinChannel_CallBack(WPARAM wParam, LPARAM lParam)
 
 	//m_uid = lpData->uid;
 	m_set_uid.insert(lpData->uid);
-	AfxGetEVLive()->JoinEVChannel(app_id.c_str(), lpData->channel, lpData->uid, m_user_choose_role);
-
+	
 	if (m_user_choose_role == EVLIVE_USER_ROLE_AUDIENCE)//连麦请求者
-		m_staJoinChannelInfo.SetWindowText(_T("进入频道成功!"));
+		m_staJoinChannelInfo.SetWindowText(_T("连麦请求者进入频道成功!通知业务服务器"));
 	else
 	{
-
-		m_staJoinChannelInfo.SetWindowText(_T("主播创建频道成功，并且成功进入频道!"));
+		m_staJoinChannelInfo.SetWindowText(_T("主播创建频道成功，并且成功进入频道!通知业务服务器"));
 	}
+
+	AfxGetEVLive()->JoinEVChannel(app_id.c_str(), lpData->channel, lpData->uid, m_user_choose_role);
+
+
 	
 	m_bJoinChannel = true;
 	//m_btnJoinChannel.EnableWindow(false);
@@ -443,6 +447,7 @@ LRESULT CChatUserDlg::OnEIDCreateChannel(WPARAM wParam, LPARAM lParam)
 		CString strChannelId = _A2T(m_channel_id.c_str()).c_str();
 		m_editChatRoom.SetWindowText(strChannelId);
 		//主播创建成功，进行鉴权
+		m_staJoinChannelInfo.SetWindowText(_T("创建频道成功，获取鉴权信息"));
 		AfxGetEVLive()->UserAuth(app_id.c_str(), m_channel_id.c_str(), 0);
 		delete lpData;
 		lpData = NULL;
@@ -461,6 +466,7 @@ LRESULT CChatUserDlg::OnEIDUserAuth(WPARAM wParam, LPARAM lParam)
 	bool bSuccess = static_cast<bool>(wParam);
 	if (bSuccess)
 	{
+		m_staJoinChannelInfo.SetWindowText(_T("用户获取鉴权信息成功"));
 		//主播获取鉴权key成功，设置角色并进行鉴权
 		LPEV_USER_AUTH_RES lpData = (LPEV_USER_AUTH_RES)lParam;
 		//保存owner_id
@@ -470,16 +476,15 @@ LRESULT CChatUserDlg::OnEIDUserAuth(WPARAM wParam, LPARAM lParam)
 		m_strChannelkey = lpData->channel_key;
 		if (0 == AfxGetEVLive()->SetClientRole(EV_CLIENT_ROLE_BROADCASTER, lpData->auth_key)) //鉴权成功 
 		{
-			//Sleep(1000);
+			
 			_EVJoinChannel(m_channel_id);
 		}
-		//delete lpData;
-		//lpData = NULL;
-	}
-	else
-	{
-		//CString strError = (TCHAR*)lParam;
-		//AfxMessageBox(strError);
+
+		if (lpData)
+		{
+			delete lpData;
+			lpData = NULL;
+		}
 	}
 	return 0;
 }
@@ -489,6 +494,7 @@ LRESULT CChatUserDlg::OnEIDEVJoinChannel(WPARAM wParam, LPARAM lParam)
 	bool bSuccess = static_cast<bool>(wParam);
 	if (bSuccess)
 	{
+		m_staJoinChannelInfo.SetWindowText(_T("向服务器发送进入频道的通知成功"));
 		AfxGetEVLive()->StartCommHeart(app_id.c_str(), m_channel_id.c_str(), m_uid);
 		//AfxMessageBox(_T("JoinEvChannel success"));
 	}
@@ -498,6 +504,22 @@ LRESULT CChatUserDlg::OnEIDEVJoinChannel(WPARAM wParam, LPARAM lParam)
 	}
 	return 0;
 }
+
+LRESULT CChatUserDlg::OnEIDBadNetWork(WPARAM wParam, LPARAM lParam)
+{
+	m_nReceiveBadNetCount++;
+
+	if (m_nReceiveBadNetCount == MAX_RECV_BADNET_COUNT) //连续MAX_RECV_BADNET_COUNT次收到网络太差说明确实太差了，要提示用户
+	{
+		if (m_user_choose_role == EVLIVE_USER_ROLE_BROADCASTER)
+			AfxMessageBox(_T("网络太差，主播退出频道"));
+		else
+			AfxMessageBox(_T("网络太差，连麦者退出频道"));
+	}
+	
+	return 0;
+}
+
 
 LRESULT CChatUserDlg::OnEIDEVLeaveChannel(WPARAM wParam, LPARAM lParam)
 {
@@ -811,15 +833,6 @@ void CChatUserDlg::_EVJoinChannel(std::string channel_id/*, CString push_url*/)
 		configurePublisher.height = evParam.videoResolutionHeight;
 		configurePublisher.owner = true;
 		configurePublisher.publishUrl = m_push_url.c_str();
-	//	configurePublisher.publishUrl = "rtmp://wspush.easyvaas.com/record/OEeWe38UBX5CAZ7m?key=FFuDKv9462nlVgtwL0QmE0jlsKOVQ6QiU5Sc57f9QbrlJLuFHuclbXMFuWI";
-		//configurePublisher.publishUrl = 
-
-		//configurePublisher.width = 
-		
-	//	strcpy_s(const_cast<char*>( configurePublisher.publishUrl), m_push_url.length() + 1, m_push_url.c_str());
-
-		//memcpy_s((void*)configurePublisher.publishUrl, MAX_PATH, m_push_url.c_str(), m_push_url.length());
-		//configurePublisher.publishUrl[m_push_url.length()] = 0;
 		AfxGetEVLive()->ConfigurePublisher(configurePublisher);
 	}
 
@@ -834,6 +847,7 @@ void CChatUserDlg::_EVJoinChannel(std::string channel_id/*, CString push_url*/)
 // 	std::string strInfo = jsTemp.toStyledString();
 // 	AfxGetEVLive()->JoinChannel(CT2CA(channel_id), strInfo.c_str());
 // #else
+	m_staJoinChannelInfo.SetWindowText(_T("正在进入频道"));
 	int ret = AfxGetEVLive()->JoinChannel(channel_id.c_str(), NULL, m_uid, m_strChannelkey.c_str());
 	if (ret == -2)
 	{
@@ -869,6 +883,7 @@ void CChatUserDlg::_CreateChannel(CString channel_id)
 {
 	//TString app_id = AflGetEVData()->GetAppID();
 	std::string channel = _T2A(channel_id.GetBuffer(0));
+	m_staJoinChannelInfo.SetWindowText(_T("开始创建频道"));
 	AfxGetEVLive()->CreateChannel(const_cast<char*>(app_id.c_str()), const_cast<char*>(channel.c_str()));
 }
 
@@ -955,11 +970,13 @@ void CEVDemoCallBack::onRejoinChannelSuccess(const char* channel, unsigned int u
 	::PostMessage(g_ChatUserWnd, WM_MSGID(EID_REJOINCHANNEL_SUCCESS), (WPARAM)lpData, 0);
 }
 
+
 void CEVDemoCallBack::onWarning(int warn, const char* msg)
 {
 	CString str;
-
 	str = _T("onWarning");
+	if (warn == 104)
+		::PostMessage(g_ChatUserWnd, WM_MSGID(EID_EV_BAD_NETWORK), 0, 0);
 }
 
 void CEVDemoCallBack::onError(int err, const char* msg)

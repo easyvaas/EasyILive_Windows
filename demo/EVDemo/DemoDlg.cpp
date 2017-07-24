@@ -58,7 +58,7 @@ void CDemoDlg::DoDataExchange(CDataExchange* pDX)
 	CDialogEx::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_MICROP_VOLUME_SLIDER, m_ctrMicrop);
 	DDX_Control(pDX, IDC_DESTOP_VOLUME_SLIDER, m_ctrDestop);
-	DDX_Control(pDX, IDC_EDIT_PUSHURL, m_edtPushUrl);
+
 }
 
 BEGIN_MESSAGE_MAP(CDemoDlg, CDialogEx)
@@ -129,13 +129,6 @@ BOOL CDemoDlg::OnInitDialog()
 
 	EVStreamerParameter para;
 	AfxGetEVLive()->SetParameter(para);
-
-	// ÏûÏ¢´°¿Ú;
-	m_dlgMessage.Create(IDD_MESSAGE_DIALOG, this);
-	CRect rect;
-	GetDlgItem(IDC_STATIC_MESSAGE_AREA)->GetWindowRect(rect);
-	m_dlgMessage.MoveWindow(rect);
-	m_dlgMessage.ShowWindow(SW_SHOW);
 
 	return TRUE;
 }
@@ -276,7 +269,6 @@ void CDemoDlg::OnBnClickedEndliveButton()
 	GetDlgItem(IDC_ENDLIVE_BUTTON)->EnableWindow(FALSE);
 
 	GetDlgItem(IDC_SET_BUTTON)->EnableWindow(TRUE);
-	m_edtPushUrl.SetWindowText(_T(""));
 
 	SetWindowText(_T("Demo"));
 }
@@ -385,7 +377,6 @@ LRESULT CDemoDlg::WindowProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
 			{
 				if (WM_PREPARESTREAM_CALLBACK == uMsg)
 				{
-					m_edtPushUrl.SetWindowText(strAddress);
 					AfxGetEVLive()->StartStream();
 					GetDlgItem(IDC_STARTLIVE_BUTTON)->EnableWindow(FALSE);
 					GetDlgItem(IDC_ENDLIVE_BUTTON)->EnableWindow(TRUE);

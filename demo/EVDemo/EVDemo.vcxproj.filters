@@ -69,9 +69,6 @@
     <ClInclude Include="Dialog\ChatUserDlg.h">
       <Filter>Dialog</Filter>
     </ClInclude>
-    <ClInclude Include="Dialog\MessageDlg.h">
-      <Filter>Dialog</Filter>
-    </ClInclude>
     <ClInclude Include="Dialog\SetDlg.h">
       <Filter>Dialog</Filter>
     </ClInclude>
@@ -123,9 +120,6 @@
       <Filter>Dialog</Filter>
     </ClCompile>
     <ClCompile Include="Dialog\ChatUserDlg.cpp">
-      <Filter>Dialog</Filter>
-    </ClCompile>
-    <ClCompile Include="Dialog\MessageDlg.cpp">
       <Filter>Dialog</Filter>
     </ClCompile>
     <ClCompile Include="Dialog\SetDlg.cpp">

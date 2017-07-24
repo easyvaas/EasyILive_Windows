@@ -143,38 +143,4 @@ public:
 	virtual void onLeaveEVChannel(IN const bool& bSuccessed, IN const char* strErrInfo);
 	virtual void onJoinEVChannel(IN const bool& bSuccessed, IN const char* strErrInfo);
 	virtual void onStartCommHeart(IN const bool& bSuccessed, IN const char* strErrInfo);
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// EVMessage
-
-	virtual void onGetMessageServer(const char * serverIp, int serverPort, const char * handShakeKey);
-	virtual void onConnectError(const char * errorInfo);
-	virtual void onConnected();
-
-	// 加入topic成功，content内容为json字符串，包括私有数据、用户列表信息（用户列表、管理员列表、禁言列表、踢人列表）;
-	virtual void onJoinOK(const char * topic, const char ** users, int userNum,
-		const char ** privateInfo, int privateInfoNum,
-		const char ** managers, int managersNum,
-		const char ** shutups, int shutupsNum,
-		const char ** kickusers, int kickusersNum);
-	// 离开topic成功，content内容为json字符串，包括私有数据、用户列表信息（用户列表、管理员列表、禁言列表、踢人列表）;
-	virtual void onLeaveOK(const char * content, const char * topic);
-
-	// message为json格式字符串；type包括：观看人数、系统消息、礼物、弹幕、直播状态、标题更新等;
-	virtual void onNewMessage(const char * message, const char * topic, const char * userData, const char * userId);
-	// 新加入用户列表;
-	virtual void onUserJoin(char ** users, int num);
-	// 离开用户的列表;
-	virtual void onUserLeave(char ** users, int num);
-	// 点赞数;
-	virtual void onLikeCount(int likeCount);
-	// 评论数;
-	virtual void onCommentCount(int likeCount);
-	// 饭团数;
-	virtual void onRiceRoll(int riceCount);
-	// 正在观看数;
-	virtual void onWatchingCount(int watchingCount);
-	// 已观看数;
-	virtual void onWatchedCount(int watchedCount);
-	// 错误列表，见下面列表;
-	virtual void onError(int errCode);
 };

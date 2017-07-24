@@ -263,4 +263,5 @@ typedef struct _EV_USER_AUTH_RES
 
 #define EID_EV_USER_JOIN                         0x00000023
 #define EID_EV_USER_LEAVE                        0x00000024
+#define EID_EV_BAD_NETWORK                       0x00000025
 #endif

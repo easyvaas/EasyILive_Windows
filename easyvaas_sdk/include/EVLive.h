@@ -255,22 +255,6 @@ public:
 	//UserAuth·µ»ØµÄuid
 	virtual void JoinEVChannel(IN const char* appid, IN const char* channel_id, IN const unsigned int uid, int role = 0) = 0;
 	virtual void StartCommHeart(IN const char* appid, IN const char* channel_id, IN const unsigned int uid) = 0;
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// EVMessage
-
-	virtual void Connect() = 0;
-	virtual void Close() = 0;
-	virtual void JoinTopic(char ** topicList, int topicNum) = 0;
-	virtual void LeaveTopic(char ** topicList, int topicNum) = 0;
-	virtual void Send(char * topic, char * msg, char * jsonString) = 0;
-	virtual void AddLikeCount(char * topic, int count) = 0;
-	virtual void SendMsgToUsers(char * topic, char * message, char ** userlist, int userNum) = 0;
-	virtual void SetManager(char * topic, char * userdata, int period) = 0;
-	virtual void DelManager(char * topic, char * userdata) = 0;
-	virtual void SetShutup(char * topic, char * userdata, int period) = 0;
-	virtual void DelShutup(char * topic, char * userdata) = 0;
-	virtual void SetKickUser(char * topic, char * userdata, int period) = 0;
-	virtual void DelKickUser(char * topic, char * userdata) = 0;
 };
 
 class EVLIVE_API CEVLiveFactory
