@@ -190,8 +190,8 @@ public:
 	{
 		frameRate = 15;
 		maxVideoBitrate = 500;
-		videoResolutionWidth = 1920;
-		videoResolutionHeight = 1080;
+		videoResolutionWidth = 1080;//1920;
+		videoResolutionHeight = 720;//1080;
 		iFrameInterval = 75;
 	}
 
@@ -218,6 +218,12 @@ public:
 		strcpy_s(strDevName, "");
 		strcpy_s(strDevID, "");
 	}
+	void clear()
+	{
+		strcpy_s(strDevName, "");
+		strcpy_s(strDevID, "");
+	}
+
 	char strDevName[255];
 	char strDevID[255];
 };

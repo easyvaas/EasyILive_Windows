@@ -2,6 +2,11 @@
 
 #define MAX_GAMEOPTS_COUNT	100
 
+enum EV_MAX_DEVICE_ID_LENGT_TYPE
+{
+	EV_MAX_DEVICE_ID_LENGTH = 512
+};
+
 enum LIVESUPPORT
 {
 	LIVE_RTMP_PUSHE = 1,
@@ -67,7 +72,7 @@ struct EVVideoCanvas
 
 	EVVideoCanvas()
 		: view(NULL)
-		, renderMode(EV_RENDER_MODE_HIDDEN)
+		, renderMode(EV_RENDER_MODE_FIT)
 		, uid(0)
 		, priv(NULL)
 	{}
@@ -81,7 +86,7 @@ struct EVVideoCanvas
 };
 
 
-//设置推流布局
+//设置远端旁路推流布局
 struct EVVideoCompositingLayout
 {
 	struct Region {
@@ -105,7 +110,7 @@ struct EVVideoCompositingLayout
 			, height(0)
 			, zOrder(0)
 			, alpha(1.0)
-			, renderMode(EV_RENDER_MODE_HIDDEN)
+			, renderMode(EV_RENDER_MODE_FIT)
 		{}
 
 	};
@@ -208,6 +213,11 @@ enum EV_USER_OFFLINE_REASON_TYPE
 	EV_USER_OFFLINE_DROPPED = 1,
 };
 
+enum MAX_DEV_ID_LENGTH_TYPE
+{
+	MAX_DEV_ID_LENGTH = 512
+};
+
 struct EVLocalVideoStats
 {
 	int sentBitrate;
@@ -230,7 +240,7 @@ enum EV_RTMP_STREAM_LIFE_CYCLE_TYPE
 
 struct EVRemoteVideoStats
 {
-	unsigned short uid;
+	unsigned int uid;
 	int delay;
 	int width;
 	int height;
@@ -239,18 +249,12 @@ struct EVRemoteVideoStats
 	EV_REMOTE_VIDEO_STREAM_TYPE rxStreamType;
 };
 
+//旁路推流参数，包含分辨率、帧率、码率
 struct EVPublisherConfiguration{
 	int width;
 	int height;
 	int framerate;
 	int bitrate;
-	int defaultLayout;
-	int lifecycle;
-	bool owner;
-	const char* publishUrl;
-	const char* rawStreamUrl;
-	const char* extraInfo;
-	
 public:
 
 	EVPublisherConfiguration()
@@ -258,12 +262,6 @@ public:
 		, height(360)
 		, framerate(15)
 		, bitrate(500)
-		, defaultLayout(1)
-		, lifecycle(EV_RTMP_STREAM_LIFE_CYCLE_BIND2CHANNEL)
-		, owner(true)
-		, publishUrl(NULL)
-		, rawStreamUrl(NULL)
-		, extraInfo(NULL)
 	{}
 };
 //多人连麦 业务数据
@@ -273,3 +271,9 @@ enum EVLive_User_Role
 	EVLIVE_USER_ROLE_BROADCASTER,
 };
 
+enum EV_LIVE_TYPE
+{
+	EV_LIVE_TYPE_CAMERA = 0,
+	EV_LIVE_TYPE_SHAREWINDOW ,
+	EV_LIVE_TYPE_SCREEN_CAPTURE,
+};
