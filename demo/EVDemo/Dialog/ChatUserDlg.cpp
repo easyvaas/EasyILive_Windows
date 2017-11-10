@@ -10,8 +10,8 @@
 #define	VIDEO_RATIO						(9.0 / 16.0)		// width / height
 
 HWND g_ChatUserWnd = NULL;
-
-
+HWND g_ShareWnd = NULL;
+RECT rcShareWnd;
 CCompositionLayout::CCompositionLayout()
 {
 	m_vec_uid.clear();
@@ -22,49 +22,193 @@ CCompositionLayout::~CCompositionLayout()
 
 }
 
-void CCompositionLayout::SetCanvasAttribute(int width, int height, const char* bgColor, const char* appData, int appDataLen )
+void CCompositionLayout::SetCanvasAttribute(SIZE szCanvasLayout, const char* bgColor, const char* appData, int appDataLen)
 {
-	m_layout.canvasWidth     = width;    //窗口宽度
-	m_layout.canvasHeight    = height;   //窗口高度
+	m_layout.canvasWidth     = szCanvasLayout.cx;    //窗口宽度
+	m_layout.canvasHeight    = szCanvasLayout.cy;   //窗口高度
 	m_layout.backgroundColor = bgColor;
 	m_layout.appData         = appData;
 	m_layout.appDataLength   = appDataLen;
-	m_width  = width;
-	m_height = height;
+	m_width = szCanvasLayout.cx;
+	m_height = szCanvasLayout.cy;
+
+	if (NULL != g_ShareWnd)
+	{
+		RECT rc = { 0 };
+		::GetWindowRect(g_ShareWnd, &rc);
+		m_realWidth = rc.right - rc.left;
+		m_realHeight = rc.bottom - rc.top;
+	}
+	else
+	{
+		m_realWidth = m_width; 
+		m_realHeight = m_height;
+	}
 }
 
-void CCompositionLayout::UserJoinChannel(unsigned int uid)
+void CCompositionLayout::UserJoinChannel(unsigned int uid, bool bBroadCast)
 {
 	m_lock.Lock();
-	m_vec_uid.push_back(uid);
+	if (m_set_uid.find(uid) == m_set_uid.end())//没找到
+	{
+		//第一个保存主播uid，如果出去了再重新进来
+		m_set_uid.insert(uid);
+		m_vec_uid.push_back(uid);
+
+		if (bBroadCast)
+		{
+			for (int i = m_vec_uid.size() - 1; i > 0;--i)
+			{
+				m_vec_uid[i] = m_vec_uid[i - 1];
+			}
+			m_vec_uid[0] = uid;
+		}
+		
+	}
+	//ChangeLayout(uid);
 	_SetCompositionLayout();
 	m_lock.UnLock();
-	//m_vec_uid.push_back()
-}
-
-void CCompositionLayout::Clear()
-{
-	m_vec_uid.clear();
 }
 
 void CCompositionLayout::UserLeaveChannel(unsigned int uid)
 {
 	m_lock.Lock();
-	bool bAssignNextValue = false;
+// 	
+// 	//只剩主播自己
+// 	if (m_vec_uid.size() == 1)
+// 	{
+// 		_SetCompositionLayout();
+// 	}
+
 	for (auto iter = m_vec_uid.begin(); iter != m_vec_uid.end(); ++iter)
 	{
 		if (uid == *iter)
 		{
 			m_vec_uid.erase(iter);
+			auto set_iter = m_set_uid.find(uid);
+			m_set_uid.erase(set_iter);
 			break;
 		}
 	}
-
-	_SetCompositionLayout();
+	
+	if (m_vec_uid.size() > 0)
+	{
+		_SetCompositionLayout();
+	}
 	m_lock.UnLock();
 }
 
-// 三行两列，纵向占满全部高度，横向最多两列，所以先计算高度
+void CCompositionLayout::BroadCastLeaveChannel(unsigned int uid)
+{
+	for (int i = 0; i < 7; i++)
+	{
+		regions[i].width  = 0;
+		regions[i].height = 0;
+		regions[i].x = 0;
+		regions[i].y = 0;
+		regions[i].zOrder = 0;
+		regions[i].alpha = 0;
+		regions[i].uid = 0;
+	}
+	m_layout.regions = regions;
+	AfxGetEVLive()->SetVideoCompositingLayout(m_layout);
+}
+
+void CCompositionLayout::ChangeLayout(unsigned int uid)
+{
+	int find_index = -1;
+	m_lock.Lock();
+	for (int i = 0; i < m_vec_uid.size(); ++i)
+	{
+		if (uid == m_vec_uid[i])
+		{
+			find_index = i;
+			break;
+		}
+	}
+	m_lock.UnLock();
+
+	m_layout.regionCount = m_vec_uid.size();
+	SIZE szChange;
+	EV_LIVE_TYPE type = AfxGetEVLive()->GetEVLiveType();
+	//共享窗口和截屏窗口大小会变化
+	if (type == EV_LIVE_TYPE_SHAREWINDOW)
+	{
+		RECT rc = { 0 };
+		::GetWindowRect(g_ShareWnd, &rc);
+		szChange = { rc.right - rc.left, rc.bottom - rc.top };
+	}
+	else if(EV_LIVE_TYPE_SCREEN_CAPTURE == type)//EV_LIVE_TYPE_SCREEN_CAPTURE
+	{
+		RECT rcScreenCapture;
+		AfxGetEVLive()->GetRealComositionLayoutRect(rcScreenCapture);
+		szChange = { rcScreenCapture.right - rcScreenCapture.left, rcScreenCapture.bottom - rcScreenCapture.top };
+	}
+	else
+	{
+		RECT rcCamera;
+		AfxGetEVLive()->GetRealComositionLayoutRect(rcCamera);
+		float h = rcCamera.bottom - rcCamera.top;
+		float w = rcCamera.right - rcCamera.left;
+		//
+		int temp_w = ((float)m_height / (float)h)*w;
+		if (m_width <= ((float)m_height / (float)h)*w)
+		{
+			szChange.cx = m_width;
+			szChange.cy = ((float)m_width / (float)w)*h;
+		}
+		else if (m_height < ((float)m_width / (float)w)*h)
+		{
+			szChange.cy = m_height;
+			szChange.cx = ((float)m_height / (float)h)*w;
+		}
+	}
+
+	//横纵间距都是20像素
+	int distance = 20;
+	double distance_rate = 20 / (double)m_height;
+
+	double h = (m_height - (max_rows + 1) * 20) / (double)max_rows;
+
+	//double w = (m_width - (max_cols + 1) * 20) / (double)max_cols;
+
+	double rate_h = (double)h / m_height;
+	double rate_w = rate_h;
+
+
+	float offset_x = 0.0;
+	float offset_y = 0.0;
+
+	for (int i = 0; i < m_vec_uid.size(); ++i)
+	{
+		regions[i].uid = m_vec_uid[i];
+		regions[i].alpha = 1.0;
+
+		regions[i].renderMode = EV_RENDER_MODE_FIT;
+		
+		if (0 == i)
+		{
+			regions[i].width = (szChange.cx) / (double)m_width;
+			regions[i].height = szChange.cy/ (double)m_height;
+			regions[i].x = (m_width - szChange.cx) / (double)(2 * m_width);
+			regions[i].y = (m_height - szChange.cy) / (double)(2 * m_height);
+			regions[i].zOrder = 0;	
+		}
+		else
+		{
+			regions[i].width = rate_w;
+			regions[i].height = rate_h;
+			regions[i].x = 1.0 - ((i - 1) / rows + 1)*(distance_rate + rate_w);
+			regions[i].y = ((i - 1) % rows + 1)*(distance_rate)+((i - 1) % rows)*rate_h;
+			regions[i].zOrder = 1;
+
+		}
+	}
+	m_layout.regions = regions;
+	AfxGetEVLive()->SetVideoCompositingLayout(m_layout);
+}
+
+//三行两列，纵向占满全部高度，横向最多两列，所以先计算高度
 void CCompositionLayout::_SetCompositionLayout()
 {
 	m_layout.regionCount = m_vec_uid.size();
@@ -79,8 +223,11 @@ void CCompositionLayout::_SetCompositionLayout()
 	
 	double rate_h = (double)h/m_height;
 	double rate_w = rate_h;
-	
 
+	
+	float offset_x = 0.0;
+	float offset_y = 0.0;
+	
 	for (int i = 0; i < m_vec_uid.size(); ++i)
 	{
 		regions[i].uid         = m_vec_uid[i];
@@ -89,10 +236,10 @@ void CCompositionLayout::_SetCompositionLayout()
 		regions[i].renderMode  = EV_RENDER_MODE_FIT;
 		if (0 == i)
 		{
-			regions[i].width   = 1.0;
-			regions[i].height  = 1.0;
-			regions[i].x       = 0;
-			regions[i].y       = 0;
+			regions[i].width = m_realWidth / m_width;//1.0;
+			regions[i].height  = m_realHeight/m_height;
+			regions[i].x = offset_x;
+			regions[i].y = offset_y;
 			regions[i].zOrder  = 0;
 		}
 		else
@@ -104,9 +251,18 @@ void CCompositionLayout::_SetCompositionLayout()
 			regions[i].zOrder  = 1;
 		
 		}
-		//m_layout.regions->uid = m_vec_uid[i];
-
 	}
+
+// 	for (int i = m_vec_uid.size(); i < 7; ++i)
+// 	{
+// 		regions[i].width = 0;
+// 		regions[i].height = 0;
+// 		regions[i].x = 0;
+// 		regions[i].y = 0;
+// 		regions[i].zOrder = 0;
+// 		regions[i].uid = 0;
+// 		
+// 	}
 	m_layout.regions = regions;
 	AfxGetEVLive()->SetVideoCompositingLayout(m_layout);
 }
@@ -118,8 +274,11 @@ IMPLEMENT_DYNAMIC(CChatUserDlg, CDialogEx)
 CChatUserDlg::CChatUserDlg(CWnd* pParent /*=NULL*/)
 : CDialogEx(CChatUserDlg::IDD, pParent)
 {
-	
-	app_id = "evdev";//theApp.app_id;//theApp.app_id;
+
+	app_id = "53957274";//theApp.app_id;//theApp.app_id;
+
+	m_szMaxRemoteLayoutResolution.cx = 1920;
+	m_szMaxRemoteLayoutResolution.cy = 1080;
 }
 
 CChatUserDlg::~CChatUserDlg()
@@ -137,11 +296,13 @@ void CChatUserDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_STATIC_JOINCHANNEL_INFO, m_staJoinChannelInfo);
 	DDX_Control(pDX, IDC_BUTTON_JOIN_CHANNEL, m_btnJoinChannel);
 	DDX_Control(pDX, IDC_BUTTON_LEAVE_CHANNEL, m_btnLeaveChannel);
+	DDX_Control(pDX, IDC_RADIO_720, m_radio720);
+	DDX_Control(pDX, IDC_EDIT_UID, m_edtUID);
 }
 
 
 BEGIN_MESSAGE_MAP(CChatUserDlg, CDialogEx)
-	ON_MESSAGE(WM_ADDTOLIVE, &CChatUserDlg::OnAddToLive)
+	//ON_MESSAGE(WM_ADDTOLIVE, &CChatUserDlg::OnAddToLive)
 	
 	ON_MESSAGE(WM_MSGID(EID_JOINCHANNEL_SUCCESS), &CChatUserDlg::OnJoinChannel_CallBack)
 	ON_MESSAGE(WM_MSGID(EID_LEAVE_CHANNEL), &CChatUserDlg::OnLeaveChannel_CallBack)
@@ -149,24 +310,33 @@ BEGIN_MESSAGE_MAP(CChatUserDlg, CDialogEx)
 	ON_MESSAGE(WM_MSGID(EID_FIRST_LOCAL_VIDEO_FRAME), &CChatUserDlg::OnEIDFirstLocalFrame)
 	ON_MESSAGE(WM_MSGID(EID_FIRST_REMOTE_VIDEO_DECODED), &CChatUserDlg::OnEIDFirstRemoteFrameDecoded)
 	ON_MESSAGE(WM_MSGID(EID_USER_OFFLINE), &CChatUserDlg::OnEIDUserOffline)
+	ON_MESSAGE(WM_MSGID(EID_USER_MUTE_VIDEO), &CChatUserDlg::OnEIDUserMuteVideo)
 	ON_MESSAGE(WM_MSGID(EID_REMOTE_VIDEO_STAT), &CChatUserDlg::OnRemoteVideoStat)
 	ON_MESSAGE(WM_MSGID(EID_USER_JOINED), &CChatUserDlg::OnEIDUserJoined)
 
-	ON_MESSAGE(WM_MSGID(EID_EV_CREATE_CHANNEL), &CChatUserDlg::OnEIDCreateChannel)
-	ON_MESSAGE(WM_MSGID(EID_EV_USER_AUTH), &CChatUserDlg::OnEIDUserAuth)
-	
-	ON_MESSAGE(WM_MSGID(EID_EV_USER_JOIN), &CChatUserDlg::OnEIDEVJoinChannel)
-	ON_MESSAGE(WM_MSGID(EID_EV_USER_LEAVE), &CChatUserDlg::OnEIDEVLeaveChannel)
-
 	ON_MESSAGE(WM_MSGID(EID_EV_BAD_NETWORK), &CChatUserDlg::OnEIDBadNetWork)
+	ON_MESSAGE(WM_MSGID(EID_EV_COMM_HEART_BEAT), &CChatUserDlg::OnEIDCommHeartBeat)
 
+	ON_MESSAGE(WM_MSGID(EID_WINDOWS_SHARE_START), &CChatUserDlg::OnEIDStartShare)
+	ON_MESSAGE(WM_MSGID(EID_SCREEN_CAPTURE_DESKTOP), &CChatUserDlg::OnEIDStartScreenCapture)
+	ON_MESSAGE(WM_MSGID(EID_START_LOCAL_PREVIEW), &CChatUserDlg::OnEIDStartLocalPreview)
+	ON_MESSAGE(WM_MSGID(WM_MSG_SHAREWINDOW_SIZE), &CChatUserDlg::OnEIDShareWindowChanged)
+	ON_MESSAGE(WM_MSGID(EID_CHANED_VIDEOPROFILE), &CChatUserDlg::OnEIDChangedVideoProfile)
 
+	
 	ON_WM_SIZE()
 	ON_WM_SHOWWINDOW()
 	ON_BN_CLICKED(IDC_BUTTON_JOIN_CHANNEL, &CChatUserDlg::OnJoinChannel)
 	ON_BN_CLICKED(IDC_BUTTON_LEAVE_CHANNEL, &CChatUserDlg::OnLeaveChannel)
 	ON_CBN_SELCHANGE(IDC_COMBO_ROLE, &CChatUserDlg::OnSelchangeComboRole)
-	ON_BN_CLICKED(IDC_CHECK_CONFIGUREPUBLISHER, &CChatUserDlg::OnBnClickedCheckConfigurepublisher)
+	
+	ON_BN_CLICKED(IDC_RADIO_720, &CChatUserDlg::OnClickedRadio720)
+	ON_COMMAND(IDC_RADIO_360, &CChatUserDlg::OnRadio360)
+	ON_COMMAND(IDC_RADIO_180, &CChatUserDlg::OnRadio180)
+	ON_BN_CLICKED(IDC_BUTTON_STOP_SHARE, &CChatUserDlg::OnBnClickedButtonStopShare)
+	ON_BN_CLICKED(IDC_BUTTON_ENABLE_VIDEO, &CChatUserDlg::OnBnClickedButtonEnableVideo)
+	ON_BN_CLICKED(IDC_BUTTON_MUTE_VIDEO, &CChatUserDlg::OnBnClickedButtonMuteVideo)
+	
 END_MESSAGE_MAP()
 
 
@@ -180,28 +350,38 @@ LRESULT CChatUserDlg::OnJoinChannel_CallBack(WPARAM wParam, LPARAM lParam)
 
 	//m_uid = lpData->uid;
 	m_set_uid.insert(lpData->uid);
+
+	m_uid = lpData->uid;
+	m_channel_id = lpData->channel;
+
+
+	m_editChatRoom.SetWindowText(CA2T(lpData->channel));
+	CString strUid; 
+	strUid.Format(_T("%u"), lpData->uid);
 	
+	m_edtUID.SetWindowText(strUid);
+
+	//m_edtPushUrlToOther.SetWindowText(strUrl);
+	CString strUrl = CA2T(lpData->push_url);
+	m_edtPushUrlToOther.SetWindowText(strUrl);
 	if (m_user_choose_role == EVLIVE_USER_ROLE_AUDIENCE)//连麦请求者
-		m_staJoinChannelInfo.SetWindowText(_T("连麦请求者进入频道成功!通知业务服务器"));
+		m_staJoinChannelInfo.SetWindowText(_T("连麦请求者进入频道成功!"));
 	else
 	{
-		m_staJoinChannelInfo.SetWindowText(_T("主播创建频道成功，并且成功进入频道!通知业务服务器"));
+		m_staJoinChannelInfo.SetWindowText(_T("主播成功进入频道!"));
 	}
 
-	AfxGetEVLive()->JoinEVChannel(app_id.c_str(), lpData->channel, lpData->uid, m_user_choose_role);
-
-
-	
 	m_bJoinChannel = true;
-	//m_btnJoinChannel.EnableWindow(false);
 	if (m_user_choose_role == EVLIVE_USER_ROLE_BROADCASTER)
 	{
-		EVStreamerParameter evParam;
-		AfxGetEVLive()->GetParameter(evParam);
-		m_remote_layout.SetCanvasAttribute(evParam.videoResolutionWidth, evParam.videoResolutionHeight);
-		m_remote_layout.UserJoinChannel(lpData->uid);
+		//设置旁路推流比例
+		m_remote_layout.SetCanvasAttribute(m_szMaxRemoteLayoutResolution);
+		m_remote_layout.UserJoinChannel(lpData->uid, true);
+		//m_remote_layout.ChangeLayout(m_uid);
 	}
 
+	delete[] lpData->push_url;
+	lpData->push_url = NULL;
 	delete[] lpData->channel;
 	lpData->channel = NULL;
 	delete lpData;
@@ -215,18 +395,17 @@ LRESULT CChatUserDlg::OnLeaveChannel_CallBack(WPARAM wParam, LPARAM lParam)
 	m_listWndInfo.RemoveAll();
 	m_bJoinChannel = false;
 	auto iter = m_set_uid.find(m_uid);
-	m_set_uid.erase(iter);
+	if (iter != m_set_uid.end())
+		m_set_uid.erase(iter);
 	//离开频道
-	AfxGetEVLive()->LeaveEVChannel(app_id.c_str(), m_channel_id.c_str(), m_uid);
+	//AfxGetEVLive()->LeaveEVChannel(app_id.c_str(), m_channel_id.c_str(), m_uid);
 	// 离开后将背景图改成默认;
 	SetDefaultBkg();
-
+	AfxGetEVLive()->StopScreenCapture();
+	m_edtPushUrlToOther.SetWindowText(_T(""));
 	if (m_user_choose_role == EVLIVE_USER_ROLE_BROADCASTER)
 	{
-		EVStreamerParameter evParam;
-		AfxGetEVLive()->GetParameter(evParam);
-		m_remote_layout.SetCanvasAttribute(evParam.videoResolutionWidth, evParam.videoResolutionHeight);
-
+		m_remote_layout.SetCanvasAttribute(m_szMaxRemoteLayoutResolution);
 		m_remote_layout.UserLeaveChannel(m_uid);
 	}
 
@@ -294,8 +473,6 @@ LRESULT CChatUserDlg::OnEIDFirstRemoteFrameDecoded(WPARAM wParam, LPARAM lParam)
 LRESULT CChatUserDlg::OnEIDUserJoined(WPARAM wParam, LPARAM lParam)
 {
 	LPAGE_USER_JOINED lpData = (LPAGE_USER_JOINED)(wParam);
-	EVStreamerParameter param;
-	AfxGetEVLive()->GetParameter(param);
 	
 	if (lpData)
 	{
@@ -305,10 +482,7 @@ LRESULT CChatUserDlg::OnEIDUserJoined(WPARAM wParam, LPARAM lParam)
 		int		elapsed = lpData->elapsed;
 		if (m_user_choose_role == EVLIVE_USER_ROLE_BROADCASTER)
 		{
-			EVStreamerParameter evParam;
-			AfxGetEVLive()->GetParameter(evParam);
-			m_remote_layout.SetCanvasAttribute(evParam.videoResolutionWidth, evParam.videoResolutionHeight);
-
+			m_remote_layout.SetCanvasAttribute(m_szMaxRemoteLayoutResolution);
 			m_remote_layout.UserJoinChannel(uid);
 		}
 		sprintf_s(buf, "uid %d, elapsed %d \n", uid, elapsed);
@@ -318,43 +492,80 @@ LRESULT CChatUserDlg::OnEIDUserJoined(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
+
 LRESULT CChatUserDlg::OnEIDUserOffline(WPARAM wParam, LPARAM lParam)
 {
 	LPAGE_USER_OFFLINE lpData = (LPAGE_USER_OFFLINE)wParam;
+	//  owner如果一场离开，可能还会再次进入，所以一段时间之内，频道内的连麦者不用离开。
+	//  在心跳返回的地方，其他用户自动离开
 
-	//其他用户离开，并且离开的用户是owner,则连麦观看者自动退出
-	if (lpData->uid != m_uid && lpData->uid == m_ownerid)
+
+	// 	POSITION pos = m_listWndInfo.GetHeadPosition();
+	// 	while (pos != NULL)
+	// 	{
+	// 		if (m_listWndInfo.GetAt(pos).nUID == lpData->uid)
+	// 		{
+	// 			//远程用户离开，将其界面设为默认
+	// 			for (int i = 0; i < WNDVIDEO_COUNT; i++)
+	// 			{
+	// 				if (m_wndVideo[i].GetUID() == lpData->uid)
+	// 				{
+	// 					m_wndVideo[i].SetBackImage(IDB_BACKGROUND_VIDEO, 96, 96, RGB(0x44, 0x44, 0x44));
+	// 					m_wndVideo[i].SetFaceColor(RGB(0x58, 0x58, 0x58));
+	// 					break;
+	// 				}
+	// 			}
+	// 			m_listWndInfo.RemoveAt(pos);
+	// 			RebindVideoWnd();
+	// 			break;
+	// 		}
+	// 
+	// 		m_listWndInfo.GetNext(pos);
+	// 	}
+
+	if (m_user_choose_role == EVLIVE_USER_ROLE_BROADCASTER)
 	{
-		OnLeaveChannel();
-		m_staJoinChannelInfo.SetWindowText(_T("主播离开频道，连麦请求断开，请求连麦者退出频道"));
+		m_remote_layout.SetCanvasAttribute(m_szMaxRemoteLayoutResolution);
+		m_remote_layout.UserLeaveChannel(lpData->uid);
 	}
-
-	POSITION pos = m_listWndInfo.GetHeadPosition();
-	while (pos != NULL)
-	{
-		if (m_listWndInfo.GetAt(pos).nUID == lpData->uid)
-		{
-			//远程用户离开，将其界面设为默认
-			for (int i = 0; i < WNDVIDEO_COUNT; i++)
-			{
-				if (m_wndVideo[i].GetUID() == lpData->uid)
-				{
-					m_wndVideo[i].SetBackImage(IDB_BACKGROUND_VIDEO, 96, 96, RGB(0x44, 0x44, 0x44));
-					m_wndVideo[i].SetFaceColor(RGB(0x58, 0x58, 0x58));
-					break;
-				}
-			}
-			m_listWndInfo.RemoveAt(pos);
-			RebindVideoWnd();
-			break;
-		}
-
-		m_listWndInfo.GetNext(pos);
-	}
-
-
 
 	delete lpData;
+
+	return 0;
+}
+
+LRESULT CChatUserDlg::OnEIDUserMuteVideo(WPARAM wParam, LPARAM lParam)
+{
+	LPAGE_USER_MUTE_VIDEO lpData = (LPAGE_USER_MUTE_VIDEO)wParam;
+	//true,禁止视频画面
+	if (lpData->muted)
+	{
+		if (lpData->uid == m_uid)//本地画面禁掉
+		{
+			AfxMessageBox(_T("本地画面禁掉"));
+		}
+		else
+		{
+			AfxMessageBox(_T("远端画面禁掉"));
+			if (m_user_choose_role == EVLIVE_USER_ROLE_BROADCASTER)
+				m_remote_layout.UserLeaveChannel(lpData->uid);
+		}
+	}
+	else
+	{
+		if (lpData->uid == m_uid)//本地画面禁掉
+		{
+			AfxMessageBox(_T("本地画面打开"));
+		}
+		else
+		{
+			AfxMessageBox(_T("远端画面打开"));
+			if (m_user_choose_role == EVLIVE_USER_ROLE_BROADCASTER)
+			{
+				m_remote_layout.UserJoinChannel(lpData->uid, m_uid == lpData->uid);
+			}
+		}
+	}
 
 	return 0;
 }
@@ -387,124 +598,6 @@ LRESULT CChatUserDlg::OnRemoteVideoStat(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-LRESULT CChatUserDlg::OnAddToLive(WPARAM wParam, LPARAM lParam)
-{
-	USES_CONVERSION;
-	CAGVideoWnd * videoWnd = (CAGVideoWnd *)wParam;
-	int  index = (int)lParam;
-	if (index < m_listWndInfo.GetCount())
-	{
-		WindowsInfo infoWindows;
-		infoWindows.hWnd = m_wndVideo[index].GetSafeHwnd();
-		TCHAR szTitle[200];
-		TCHAR szClass[200];
-		::GetWindowText(infoWindows.hWnd, szTitle, sizeof(szTitle) / sizeof(TCHAR));
-		::GetClassName(infoWindows.hWnd, szClass, sizeof(szClass) / sizeof(TCHAR));
-		strcpy_s(infoWindows.strClass, T2A(szClass));
-		strcpy_s(infoWindows.strTitle, T2A(szTitle));
-		// GetParent()->PostMessage(WM_ADDWINDOW, (WPARAM)gameInfo);
-		AfxGetEVLive()->AddScene(&infoWindows);
-
-		TCHAR* sourceName = szTitle;
-
-		POSITION pos = m_listWndInfo.GetHeadPosition();
-		int i = 0;
-		while (pos != NULL)
-		{
-			if (index == i) // (m_listWndInfo.GetAt(pos).nUID == lpData->uid) 
-			{
-				if (sourceName)
-				{
-					wcscpy_s(m_listWndInfo.GetAt(pos).strLiveWndSourceName, sourceName);
-				}
-				else
-				{
-					memset(m_listWndInfo.GetAt(pos).strLiveWndSourceName, 0, sizeof(m_listWndInfo.GetAt(pos).strLiveWndSourceName));
-				}
-				break;
-			}
-			m_listWndInfo.GetNext(pos);
-			++i;
-		}
-	}
-	return 0;
-}
-
-//创建频道成功
-LRESULT CChatUserDlg::OnEIDCreateChannel(WPARAM wParam, LPARAM lParam)
-{
-	bool bSuccess = static_cast<bool>(wParam);
-	if (bSuccess)
-	{
-		LPEV_CREATE_CHANNEL_RES lpData = (LPEV_CREATE_CHANNEL_RES)lParam;
-		m_channel_id = lpData->channel_id;
-		m_push_url   = lpData->push_url;
-		CString strGetUrl = _A2T(m_push_url.c_str()).c_str();
-		strGetUrl.Replace(_T("wspush"), _T("wsrtmp"));
-		//if (m_push_url)
-		if (m_chkConfigurePublisher.GetCheck())
-			m_edtPushUrlToOther.SetWindowText(strGetUrl.GetBuffer());
-		CString strChannelId = _A2T(m_channel_id.c_str()).c_str();
-		m_editChatRoom.SetWindowText(strChannelId);
-		//主播创建成功，进行鉴权
-		m_staJoinChannelInfo.SetWindowText(_T("创建频道成功，获取鉴权信息"));
-		AfxGetEVLive()->UserAuth(app_id.c_str(), m_channel_id.c_str(), 0);
-		delete lpData;
-		lpData = NULL;
-	}
-	else
-	{
-		CString strError = (TCHAR*)lParam;
-		AfxMessageBox(strError);
-	}
-	return 0;
-}
-
-//获取鉴权key
-LRESULT CChatUserDlg::OnEIDUserAuth(WPARAM wParam, LPARAM lParam)
-{
-	bool bSuccess = static_cast<bool>(wParam);
-	if (bSuccess)
-	{
-		m_staJoinChannelInfo.SetWindowText(_T("用户获取鉴权信息成功"));
-		//主播获取鉴权key成功，设置角色并进行鉴权
-		LPEV_USER_AUTH_RES lpData = (LPEV_USER_AUTH_RES)lParam;
-		//保存owner_id
-		AfxGetEVLive()->SetChannelProfile(EV_CHANNEL_PROFILE_LIVE_BROADCASTING);
-		m_ownerid = lpData->owner_id;
-		m_uid = lpData->uid;
-		m_strChannelkey = lpData->channel_key;
-		if (0 == AfxGetEVLive()->SetClientRole(EV_CLIENT_ROLE_BROADCASTER, lpData->auth_key)) //鉴权成功 
-		{
-			
-			_EVJoinChannel(m_channel_id);
-		}
-
-		if (lpData)
-		{
-			delete lpData;
-			lpData = NULL;
-		}
-	}
-	return 0;
-}
-
-LRESULT CChatUserDlg::OnEIDEVJoinChannel(WPARAM wParam, LPARAM lParam)
-{
-	bool bSuccess = static_cast<bool>(wParam);
-	if (bSuccess)
-	{
-		m_staJoinChannelInfo.SetWindowText(_T("向服务器发送进入频道的通知成功"));
-		AfxGetEVLive()->StartCommHeart(app_id.c_str(), m_channel_id.c_str(), m_uid);
-		//AfxMessageBox(_T("JoinEvChannel success"));
-	}
-	else
-	{
-		AfxMessageBox(_T("JoinEvChannel fail"));
-	}
-	return 0;
-}
-
 LRESULT CChatUserDlg::OnEIDBadNetWork(WPARAM wParam, LPARAM lParam)
 {
 	m_nReceiveBadNetCount++;
@@ -521,26 +614,84 @@ LRESULT CChatUserDlg::OnEIDBadNetWork(WPARAM wParam, LPARAM lParam)
 }
 
 
-LRESULT CChatUserDlg::OnEIDEVLeaveChannel(WPARAM wParam, LPARAM lParam)
+LRESULT CChatUserDlg::OnEIDCommHeartBeat(WPARAM wParam, LPARAM lParam)
 {
-	bool bSuccess = static_cast<bool>(wParam);
+	bool bSuccess = static_cast<bool>(wParam); 
 	if (bSuccess)
 	{
-		AfxMessageBox(_T("LeaveEVChannel success"));
+		bool bOwnerOnline = static_cast<bool>(lParam);
+		if (bOwnerOnline)
+		{
+
+		}
+		else//主播不在线了连麦者请退出
+		{
+			if (m_user_choose_role == EVLIVE_USER_ROLE_AUDIENCE)
+			{
+			 	OnLeaveChannel();
+			 	m_staJoinChannelInfo.SetWindowText(_T("主播退出频道，连麦请求断开，请求连麦者退出频道"));
+			}
+		}
 	}
 	else
 	{
-		AfxMessageBox(_T("LeaveEVChannel fail"));
+		
 	}
 	return 0;
 }
 
+LRESULT CChatUserDlg::OnEIDStartShare(WPARAM wParam, LPARAM lParam)
+{
+	if (AfxGetEVLive()->IsScreenCapture())
+		AfxGetEVLive()->StopScreenCapture();
+	AfxGetEVLive()->StartScreenCapture(g_ShareWnd);
+	
+	m_remote_layout.ChangeLayout(m_uid);
+	return 0;
+}
+
+LRESULT CChatUserDlg::OnEIDStartScreenCapture(WPARAM wParam, LPARAM lParam)
+{
+	CRect* lpRect = (CRect*)lParam;
+	
+	RECT rectSel = { lpRect->left, lpRect->top, lpRect->right, lpRect->bottom };
+
+	if (AfxGetEVLive()->IsScreenCapture())
+		AfxGetEVLive()->StopScreenCapture();
+	
+	AfxGetEVLive()->StartScreenCapture(NULL, 15, &rectSel);
+	AfxGetEVLive()->StartPreview();
+	m_remote_layout.ChangeLayout(m_uid);
+	return 0;
+}
+
+//预览
+LRESULT CChatUserDlg::OnEIDStartLocalPreview(WPARAM wParam, LPARAM lParam)
+{
+	AfxGetEVLive()->SetVideoProfile((EV_VIDEO_PROFILE_TYPE)EV_VIDEO_PROFILE_480P, FALSE);
+	AfxGetEVLive()->EnableVideo(true);
+	AfxGetEVLive()->SetLocalPreviewMirror(false);
+	//
+	EVVideoCanvas vc;
+	vc.uid = 0;
+	vc.renderMode = EV_RENDER_MODE_FIT;
+	vc.view = m_captureWnd;
+
+	int ret = AfxGetEVLive()->SetupLocalVideo(vc);
+ 
+  	if (AfxGetEVLive()->hasCamera())
+  		AfxGetEVLive()->StartPreview();
+	return 0;
+}
+
+
+
 //三行两列
 void CChatUserDlg::AdjustSizeVideo(int cx, int cy)
 {
-	int distance = 10; //窗口间距
-	int iWidth  = (m_rcVideoArea.Width() - (cols + 1)*distance) / (cols);
-	int iHeight = iWidth * VIDEO_RATIO;
+	int distance = 5; //窗口间距
+	int iWidth = 160;//(m_rcVideoArea.Width() - (cols + 1)*distance) / (cols);
+	int iHeight = 90;//iWidth * VIDEO_RATIO;
 	
 	for (int i = 0; i < WNDVIDEO_COUNT; i++)
 	{
@@ -571,8 +722,6 @@ void CChatUserDlg::InitCtrls()
 		m_cbxVideoProfile.SetItemData(nIndex, (DWORD_PTR)m_nProfileValue[nIndex]);
 	}
 
-
-
 }
 
 void CChatUserDlg::InitVideoWnd()
@@ -589,19 +738,15 @@ void CChatUserDlg::InitVideoWnd()
 		m_wndVideo[nIndex].SetWndIndex(nIndex);
 		m_wndVideo[nIndex].ShowVideoInfo(TRUE);
 	}
-// 
-// 	m_wndLocal.Create(NULL, _T("render_self"), WS_CHILD | WS_VISIBLE | WS_BORDER, CRect(0, 0, 1, 1), this, IDC_BASEWND_VIDEO + 4); // WS_CHILD | 
-// 	m_wndLocal.SetBackImage(IDB_BACKGROUND_VIDEO, 96, 96, RGB(0x44, 0x44, 0x44));
-// 	m_wndLocal.SetFaceColor(RGB(0x58, 0x58, 0x58));
-// 	m_wndLocal.SetUID(0);
-// 	m_wndLocal.ShowVideoInfo(TRUE);
 
 	//初始化角色身份 0 连麦观众 1 主播 2 观看者（PC端暂不支持，目前没有观看功能）
 	int i = 0;
 	m_cmbRole.InsertString(i++, _T("连麦观众"));
 	m_cmbRole.InsertString(i++, _T("主播"));
 	m_cmbRole.SendMessage(EM_SETREADONLY, true, 0);
-
+	
+	m_cmbRole.SetCurSel(1);
+	m_chkConfigurePublisher.SetCheck(true);
 	//m_editChatRoom.EnableWindow(FALSE);
 }
 
@@ -697,9 +842,9 @@ void CChatUserDlg::InitData()
 
 void CChatUserDlg::ShowVideo()
 {
-	int distance = 10; //窗口间距
-	int iWidth = (m_rcVideoArea.Width() - (cols + 1)*distance) / (cols);
-	int iHeight = iWidth * VIDEO_RATIO;
+	int distance = 5; //窗口间距
+	int iWidth = 160;//(m_rcVideoArea.Width() - (cols + 1)*distance) / (cols);
+	int iHeight = 90;//iWidth * VIDEO_RATIO;
 
 	for (int i = 0; i < WNDVIDEO_COUNT; i++)
 	{
@@ -722,7 +867,7 @@ void CChatUserDlg::RebindVideoWnd()
 	}
 
 	EVVideoCanvas canvas;
-	canvas.renderMode = EV_RENDER_MODE_ADAPTIVE;
+	canvas.renderMode = EV_RENDER_MODE_FIT;
 
 	POSITION pos = m_listWndInfo.GetHeadPosition();
 	for (int nIndex = 0; nIndex < WNDVIDEO_COUNT; nIndex++)
@@ -731,12 +876,13 @@ void CChatUserDlg::RebindVideoWnd()
 		{
 			AGVIDEO_WNDINFO &agvWndInfo = m_listWndInfo.GetNext(pos);
 			canvas.uid = agvWndInfo.nUID;
+		
 			canvas.view = m_wndVideo[nIndex].GetSafeHwnd();
 			agvWndInfo.nIndex = nIndex;
 
 			AfxGetEVLive()->SetupRemoteVideo(canvas);
 			m_wndVideo[nIndex].SetUID(canvas.uid);
-			m_wndVideo[nIndex].SetVideoResolution(agvWndInfo.nWidth, agvWndInfo.nHeight);
+			m_wndVideo[nIndex].SetVideoResolution(160/*agvWndInfo.nWidth*/, 90/*agvWndInfo.nHeight*/);
 			m_wndVideo[nIndex].SetFrameRateInfo(agvWndInfo.nFramerate);
 			m_wndVideo[nIndex].SetBitrateInfo(agvWndInfo.nBitrate);
 		}
@@ -752,6 +898,51 @@ void CChatUserDlg::RebindVideoWnd()
 	}
 }
 
+LRESULT CChatUserDlg::OnEIDShareWindowChanged(WPARAM wParam, LPARAM lParam)
+{
+	//保证其他连麦者看到的画面完整
+	if (g_ShareWnd != NULL && ::IsWindow(g_ShareWnd))
+	{
+		AfxGetEVLive()->StartScreenCapture(g_ShareWnd);
+	}
+
+	//修改旁路推流布局，连麦请求者可以不用调用
+	SIZE szChangeSize = { rcShareWnd.right - rcShareWnd.left, rcShareWnd.bottom - rcShareWnd.top };
+	m_remote_layout.SetCanvasAttribute(m_szMaxRemoteLayoutResolution);
+	m_remote_layout.ChangeLayout(m_uid);
+	return 0;
+}
+
+LRESULT CChatUserDlg::OnEIDChangedVideoProfile(WPARAM wParam, LPARAM lParam)
+{
+	EVVideoCanvas vc;
+	vc.uid = 0;
+	vc.renderMode = EV_RENDER_MODE_FIT;
+	vc.view = m_captureWnd;
+	int ret = AfxGetEVLive()->SetupLocalVideo(vc);
+	return 0;
+}
+
+unsigned int WINAPI CChatUserDlg::MonitorShareWindow(LPVOID lpVoid)
+{
+	while (true)
+	{
+		if (g_ShareWnd != NULL && ::IsWindow(g_ShareWnd))
+		{
+			RECT rcCurrent;
+			::GetWindowRect(g_ShareWnd, &rcCurrent);
+			if ((rcCurrent.bottom - rcCurrent.top != rcShareWnd.bottom - rcShareWnd.top)
+				|| (rcCurrent.right - rcCurrent.left != rcShareWnd.right - rcShareWnd.left))
+			{
+				rcShareWnd = rcCurrent;
+				::SendMessage(g_ChatUserWnd, WM_MSGID(WM_MSG_SHAREWINDOW_SIZE), 0, 0);
+			}
+			Sleep(500);
+		}
+	}
+	
+	return 0;
+}
 BOOL CChatUserDlg::OnInitDialog()
 {
 	CDialogEx::OnInitDialog();
@@ -764,9 +955,21 @@ BOOL CChatUserDlg::OnInitDialog()
 	//AfxGetEVLive()->SetClientRole(EV_CLIENT_ROLE_BROADCASTER, NULL);
 
 	InitVideoWnd();
-
+	m_radio720.SetCheck(true);
+	m_nCommType = MAX_AGORA_FRAME_720;
+	
 	g_ChatUserWnd = m_hWnd;
 
+	RECT rc;
+	GetWindowRect(&rc);
+
+	GetDesktopWindow()->GetWindowRect(&m_rcDesktop);
+	m_szDeskTop.cx = m_rcDesktop.right - m_rcDesktop.left;
+	m_szDeskTop.cy = m_rcDesktop.bottom - m_rcDesktop.top; 
+	m_hMonitorThread =(HANDLE)_beginthreadex(NULL, 0, MonitorShareWindow, this, 0, NULL);
+	SetThreadPriority(m_hMonitorThread, THREAD_PRIORITY_ABOVE_NORMAL);
+
+	OnEIDStartLocalPreview(0, 0);
 	return TRUE;
 }
 
@@ -798,57 +1001,72 @@ void CChatUserDlg::OnSize(UINT nType, int cx, int cy)
 void CChatUserDlg::OnShowWindow(BOOL bShow, UINT nStatus)
 {
 	CDialogEx::OnShowWindow(bShow, nStatus);
-
-	// TODO:  在此处添加消息处理程序代码
-	//if (bShow && GetSafeHwnd() != NULL) 
-	//{
-	//	RebindVideoWnd();
-	//	int nSel = CAgoraObject::GetAgoraObject()->GetClientRole();
-	//	// m_cbxRole.SetCurSel(nSel);
-	//}
 }
 
 void CChatUserDlg::_EVJoinChannel(std::string channel_id/*, CString push_url*/)
 {
-	AfxGetEVLive()->EnableVideo(true);
-	AfxGetEVLive()->EnableDauleStream(false);
-	AfxGetEVLive()->SetVideoProfile(EV_VIDEO_PROFILE_360P, true);
-	EVVideoCanvas vc;
-	vc.uid = 0;
-	//vc.view = m_wndLocal.GetSafeHwnd();
-	vc.renderMode = EV_RENDER_MODE_TYPE::EV_RENDER_MODE_HIDDEN;
-	AfxGetEVLive()->SetupLocalVideo(vc);
-	AfxGetEVLive()->StartPreview();
-
-	AfxGetEVLive()->StartScreenCapture(m_captureWnd);
-	
-	if (1 == m_chkConfigurePublisher.GetCheck() && m_user_choose_role == EVLIVE_USER_ROLE_BROADCASTER)// 0:未选中  1:选中
+	EV_VIDEO_PROFILE_TYPE type = EV_VIDEO_PROFILE_720P;
+	int bitrate = 1130;
+	int framerate = 15;
+	int videoResolutionWidth  = 1280;
+	int videoResolutionHeight = 720;
+	if (m_nCommType == MAX_AGORA_FRAME_720)
 	{
-		EVPublisherConfiguration configurePublisher;
-		EVStreamerParameter evParam;
-		AfxGetEVLive()->GetParameter(evParam);
-		configurePublisher.bitrate = evParam.maxVideoBitrate;
-		configurePublisher.framerate = evParam.frameRate;
-		configurePublisher.width = evParam.videoResolutionWidth;
-		configurePublisher.height = evParam.videoResolutionHeight;
-		configurePublisher.owner = true;
-		configurePublisher.publishUrl = m_push_url.c_str();
-		AfxGetEVLive()->ConfigurePublisher(configurePublisher);
+		type = EV_VIDEO_PROFILE_720P;//// 1280x720  15   1130
+		bitrate = 1130;
+		framerate = 15;
+		videoResolutionWidth = 1280;
+		videoResolutionHeight = 720;
+	}
+	else if (m_nCommType == MAX_AGORA_FRAME_360)
+	{
+		type = EV_VIDEO_PROFILE_360P;// 640x360   15   400
+		bitrate = 400;
+		framerate = 15;
+		videoResolutionWidth = 640;
+		videoResolutionHeight = 360;
+	}
+	else if (m_nCommType == MAX_AGORA_FRAME_180)
+	{
+		type = EV_VIDEO_PROFILE_180P;//// 320x180   15   140
+		bitrate = 140;
+		framerate = 15;
+		videoResolutionWidth = 320;
+		videoResolutionHeight = 180;
 	}
 
+	EVVideoCanvas vc;
+	vc.uid = 0;
+	vc.renderMode = EV_RENDER_MODE_FIT;
+	vc.view = m_captureWnd;
+	int ret = AfxGetEVLive()->SetupLocalVideo(vc);
 
-	
-// #ifdef SERVER_PUSH
-// 	// 使用服务器推流机制,客户端不必再次直播推流;
-// 	//"{\"streamName\":\"rtmp://xxx\", \"owner\":true}";
-// 	JsonValueEx jsTemp;
-// 	jsTemp["streamName"] = "rtmp://wspush.easyvaas.com/record/sunchaotest";
-// 	jsTemp["owner"] = "true";
-// 	std::string strInfo = jsTemp.toStyledString();
-// 	AfxGetEVLive()->JoinChannel(CT2CA(channel_id), strInfo.c_str());
-// #else
+	if (NULL != g_ShareWnd)
+	{
+		RECT rc = { 0 };
+		::GetWindowRect(g_ShareWnd, &rc);
+		videoResolutionWidth = rc.right - rc.left;
+		videoResolutionHeight = rc.bottom - rc.top;
+	}
+//	AfxGetEVLive()->SetupLocalVideo(vc);
 	m_staJoinChannelInfo.SetWindowText(_T("正在进入频道"));
-	int ret = AfxGetEVLive()->JoinChannel(channel_id.c_str(), NULL, m_uid, m_strChannelkey.c_str());
+	
+	if (m_chkConfigurePublisher.GetCheck())
+	{
+		EVPublisherConfiguration config;
+		config.bitrate = bitrate;
+		config.framerate = framerate;
+		config.height = videoResolutionHeight;
+		config.width = videoResolutionWidth;
+		AfxGetEVLive()->ConfigurePublisher(config);
+		if (NULL != g_ShareWnd)
+		{
+			::GetWindowRect(g_ShareWnd, &rcShareWnd);
+			AfxGetEVLive()->StartScreenCapture(g_ShareWnd);
+		}
+	}
+	
+	/*int*/ ret = AfxGetEVLive()->JoinChannel(app_id.c_str(), m_channel_id.c_str(), m_uid, m_user_choose_role);//最后两个参数，默认进行旁路推流和录播
 	if (ret == -2)
 	{
 		AfxMessageBox(_T("ERR_INVALID_ARGUMENT "));
@@ -866,34 +1084,8 @@ void CChatUserDlg::_EVJoinChannel(std::string channel_id/*, CString push_url*/)
 }
 
 
-// void CChatUserDlg::_OnAudienceJoinChannel(CString channel_id) //请求连麦者
-// {
-// 
-// }
-// 
-// void CChatUserDlg::_OnBroadcasterJoinChannel(CString channel_id)
-// {
-// 
-// 
-// 	//_EVJoinChannel(channel_id);
-// }
-
-
-void CChatUserDlg::_CreateChannel(CString channel_id)
-{
-	//TString app_id = AflGetEVData()->GetAppID();
-	std::string channel = _T2A(channel_id.GetBuffer(0));
-	m_staJoinChannelInfo.SetWindowText(_T("开始创建频道"));
-	AfxGetEVLive()->CreateChannel(const_cast<char*>(app_id.c_str()), const_cast<char*>(channel.c_str()));
-}
-
 void CChatUserDlg::OnJoinChannel()
 {
-	if (m_bJoinChannel)
-	{
-		m_staJoinChannelInfo.SetWindowText(_T("若想进入其他频道，请先离开当前频道"));
-		return;
-	}
 
 	int cur_sel = m_cmbRole.GetCurSel();
 	if (cur_sel < 0)
@@ -904,58 +1096,61 @@ void CChatUserDlg::OnJoinChannel()
 
 	CString channel_id;
 	m_editChatRoom.GetWindowText(channel_id);
-
 	m_channel_id = _T2A(channel_id.GetBuffer(0));
 
-	if (cur_sel == EVLIVE_USER_ROLE_BROADCASTER) //主播
-		_CreateChannel(channel_id);//_OnBroadcasterJoinChannel(channel_id);
-	else //请求连麦者
-	{	
-		if (channel_id.IsEmpty())
-		{
-			AfxMessageBox(_T("请在编辑框输入频道id,如果该id不存在则无法进入"));
-			return;
-		}
-		AfxGetEVLive()->UserAuth(app_id.c_str(), _T2A(channel_id.GetBuffer(0)).c_str(), 0);
-		//_CreateChannel(channel_id);
+	CString suid;
+	m_edtUID.GetWindowText(suid);
+	
+	if (m_user_choose_role==EVLIVE_USER_ROLE_BROADCASTER && !channel_id.IsEmpty() && suid.IsEmpty())//
+	{
+		m_staJoinChannelInfo.SetWindowText(_T("频道id不为空，必须输入主播的uid"));
+		return;
 	}
+	m_uid = _ttoi(suid.GetBuffer(0));
+	m_user_choose_role = (EVLive_User_Role)cur_sel;
+	_EVJoinChannel(m_channel_id);
 
-	//_OnOwnerJoinChannel();
-	//_EVJoinChannel(strChannelName);
 }
 
 void CChatUserDlg::OnLeaveChannel()
 {	
-	//
-	if (!m_bJoinChannel)
-	{
-		m_staJoinChannelInfo.SetWindowText(_T("还未加入任何频道！"));
-		return;
-	}
-	// 取消本地预览;
-	AfxGetEVLive()->StopPreview();
+	m_remote_layout.UserLeaveChannel(m_uid);//主播离开，设置旁路布局
 	AfxGetEVLive()->LeaveChannel();
+	
 	//清理远程布局内部信息
-	m_remote_layout.Clear();
+//	m_remote_layout.Clear();
 	m_staJoinChannelInfo.SetWindowText(_T("离开频道"));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // 回调处理;
 
-void CEVDemoCallBack::onJoinChannelSuccess(const char* channel, unsigned int uid, int elapsed)
+//连麦请求者不会获得push_url，因为只有主播创建频道的时候会获取旁路推流地址。
+void CEVDemoCallBack::onJoinChannelSuccess(const char* channel, unsigned int uid, int elapsed, const char* push_url)
 {
 	LPAGE_JOINCHANNEL_SUCCESS lpData = new AGE_JOINCHANNEL_SUCCESS;
 	
-	int nChannelLen = strlen(channel) + 1;
-	lpData->channel = new char[nChannelLen];
-	lpData->uid = uid;
-	lpData->elapsed = elapsed;
+	int nChannelLen  = strlen(channel) + 1;
+	int nUrllLen     = strlen(push_url) + 1;
+	lpData->channel  = new char[nChannelLen];
+	lpData->push_url = new char[strlen(push_url) + 1];
+	lpData->uid      = uid;
+	lpData->elapsed  = elapsed;
+
 	memset(lpData->channel, 0, 0);
 	strcpy_s(lpData->channel, nChannelLen, channel);
 	
+	memset(lpData->push_url, 0, 0);
+	strcpy_s(lpData->push_url, nUrllLen, push_url);
+
 	::PostMessage(g_ChatUserWnd, WM_MSGID(EID_JOINCHANNEL_SUCCESS), (WPARAM)lpData, 0);
 }
+
+void CEVDemoCallBack::onJoinChannelError(const char* Error)
+{
+	MessageBoxA(NULL, Error, NULL, MB_OK);
+}
+
 
 void CEVDemoCallBack::onRejoinChannelSuccess(const char* channel, unsigned int uid, int elapsed)
 {
@@ -1025,14 +1220,22 @@ void CEVDemoCallBack::onAudioVolumeIndication(const EVAudioVolumeInfo* speakers,
 	::PostMessage(g_ChatUserWnd, WM_MSGID(EID_AUDIO_VOLUME_INDICATION), (WPARAM)lpData, 0);
 }
 
-void CEVDemoCallBack::onLeaveChannel(const EVRtcStats& stat)
+void CEVDemoCallBack::onLeaveChannel(bool bSuccess, const char* strErrInfo, const EVRtcStats& stat)
 {
 
-	LPAGE_LEAVE_CHANNEL lpData = new AGE_LEAVE_CHANNEL;
+	if (bSuccess)
+	{
+		LPAGE_LEAVE_CHANNEL lpData = new AGE_LEAVE_CHANNEL;
 
-	memcpy(&lpData->rtcStat, &stat, sizeof(EVRtcStats));
+		memcpy(&lpData->rtcStat, &stat, sizeof(EVRtcStats));
 
-	::PostMessage(g_ChatUserWnd, WM_MSGID(EID_LEAVE_CHANNEL), (WPARAM)lpData, 0);
+		::PostMessage(g_ChatUserWnd, WM_MSGID(EID_LEAVE_CHANNEL), (WPARAM)lpData, 0);
+	}
+	else
+	{
+		MessageBoxA(NULL, strErrInfo, NULL, MB_OK);
+	}
+	
 }
 
 void CEVDemoCallBack::onRtcStats(const EVRtcStats& stat)
@@ -1201,96 +1404,11 @@ void CEVDemoCallBack::onRemoteVideoStats(const EVRemoteVideoStats& stats)
 	::PostMessage(g_ChatUserWnd, WM_MSGID(EID_REMOTE_VIDEO_STAT), (WPARAM)lpData, 0);
 }
 
-void CEVDemoCallBack::onCreateChannel(IN const bool& bSuccessed, IN const char* strErrInfo, IN const char* channel_id, IN const char* push_url)
-{
-	
-	if (bSuccessed)
-	{
-		LPEV_CREATE_CHANNEL_RES lpData = new EV_CREATE_CHANNEL_RES;
-
-		memset(lpData->channel_id, 0, sizeof(lpData->channel_id));
-		memset(lpData->push_url, 0, sizeof(lpData->push_url));
-
-		int len = strlen(channel_id);
-		memcpy_s(lpData->channel_id, sizeof(lpData->channel_id), channel_id, len);
-		len = strlen(push_url);
-		memcpy_s(lpData->push_url, sizeof(lpData->channel_id), push_url, len);
-		//strcpy_s(lpData->push_url, strlen(lpData->push_url), push_url);
-		//memcpy_s((bufptr)+(offset), (maxsize)-(offset), (src), (count))
-		::PostMessage(g_ChatUserWnd, WM_MSGID(EID_EV_CREATE_CHANNEL), true, (WPARAM)lpData);
-	}
-	else
-	{
-	//	AfxMessageBox(_T("CreateChannel失败"));
-		
-		std::string sError = strErrInfo;
-		std::wstring wsError =_A2T(sError.c_str());
-		AfxMessageBox(wsError.c_str());
-
-		//	::PostMessage(g_ChatUserWnd, WM_MSGID(EID_EV_CREATE_CHANNEL), false, (WPARAM)sError.c_str());
-	}
-}
-
-void CEVDemoCallBack::onUserAuth(IN const bool& bSuccessed, IN const char* strErrInfo, IN const char* auth_key, IN const unsigned int owner_id, const char* channel_key, const unsigned int uid)
+void CEVDemoCallBack::onStartCommHeart(IN const bool& bSuccessed, IN const char* strErrInfo, bool ownerOnline )
 {
 	if (bSuccessed)
 	{
-		LPEV_USER_AUTH_RES lpData = new EV_USER_AUTH_RES;
-
-
-		memset(lpData->auth_key, 0, sizeof(lpData->auth_key));
-		int len = strlen(auth_key);
-		memcpy_s(lpData->auth_key, sizeof(lpData->auth_key), auth_key, len);
-
-		memset(lpData->channel_key, 0, sizeof(lpData->channel_key));
-		len = strlen(channel_key);
-		memcpy_s(lpData->channel_key, sizeof(lpData->channel_key), channel_key, len);
-
-		lpData->owner_id = owner_id;
-		lpData->uid = uid;
-
-		//strcpy_s(lpData->auth_key, sizeof(lpData->auth_key), auth_key);
-		//strcpy_s(lpData->owner_id, strlen(lpData->owner_id), owner_id);
-		::PostMessage(g_ChatUserWnd, WM_MSGID(EID_EV_USER_AUTH), true, (WPARAM)lpData);
-	}
-	else
-	{
-		//	AfxMessageBox(_T("CreateChannel失败"));
-		CString strError;
-		strError.Format(_T("%s"), strErrInfo);
-		MessageBoxA(NULL, strErrInfo, NULL, MB_OK);
-		//::PostMessage(g_ChatUserWnd, WM_MSGID(EID_EV_USER_AUTH), false, (WPARAM)strError.GetString());
-	}
-}
-void CEVDemoCallBack::onLeaveEVChannel(IN const bool& bSuccessed, IN const char* strErrInfo)
-{
-	if (bSuccessed)
-	{
-		
-	}
-	else
-	{
-		MessageBoxA(NULL, strErrInfo, NULL, MB_OK);
-	}
-}
-
-void CEVDemoCallBack::onJoinEVChannel(IN const bool& bSuccessed, IN const char* strErrInfo)
-{
-	if (bSuccessed)
-	{
-		::PostMessage(g_ChatUserWnd, WM_MSGID(EID_EV_USER_JOIN), bSuccessed, 0);
-	}
-	else
-	{
-		MessageBoxA(NULL, strErrInfo, NULL, MB_OK);
-	}
-}
-
-void CEVDemoCallBack::onStartCommHeart(IN const bool& bSuccessed, IN const char* strErrInfo)
-{
-	if (bSuccessed)
-	{
-
+		::PostMessage(g_ChatUserWnd, WM_MSGID(EID_EV_COMM_HEART_BEAT), bSuccessed, ownerOnline);
 	}
 	else
 	{
@@ -1353,16 +1471,57 @@ void CChatUserDlg::OnSelchangeComboRole()
 	if (m_user_choose_role == EVLIVE_USER_ROLE_AUDIENCE)
 	{
 		m_chkConfigurePublisher.EnableWindow(false);
+		m_chkConfigurePublisher.SetCheck(false);
 	}
 	else if (m_user_choose_role == EVLIVE_USER_ROLE_BROADCASTER)
 	{
 		m_chkConfigurePublisher.EnableWindow(true);
+		m_chkConfigurePublisher.SetCheck(true);
 	}
 }
 
 
 
-void CChatUserDlg::OnBnClickedCheckConfigurepublisher()
+void CChatUserDlg::OnClickedRadio720()
 {
-	// TODO: Add your control notification handler code here
+	m_nCommType = MAX_AGORA_FRAME_720;
 }
+
+
+void CChatUserDlg::OnRadio360()
+{
+	m_nCommType = MAX_AGORA_FRAME_360;
+}
+
+
+void CChatUserDlg::OnRadio180()
+{
+	m_nCommType = MAX_AGORA_FRAME_180;
+}
+
+
+void CChatUserDlg::OnBnClickedButtonStopShare()
+{
+	AfxGetEVLive()->StopScreenCapture();
+	AfxGetEVLive()->StopPreveiw();
+	m_remote_layout.ChangeLayout(m_uid);
+}
+
+
+void CChatUserDlg::OnBnClickedButtonEnableVideo()
+{
+	m_remote_layout.UserJoinChannel(m_uid, true);
+	AfxGetEVLive()->MuteLocalVideo(FALSE);
+}
+
+
+void CChatUserDlg::OnBnClickedButtonMuteVideo()
+{
+	if (m_user_choose_role == EVLIVE_USER_ROLE_BROADCASTER)//主播mute画面
+	{
+		m_remote_layout.UserLeaveChannel(m_uid);
+	}
+	AfxGetEVLive()->MuteLocalVideo();
+}
+
+

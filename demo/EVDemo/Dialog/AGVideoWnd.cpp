@@ -235,7 +235,7 @@ void CAGVideoWnd::SetVideoResolution(UINT nWidth, UINT nHeight)
 		m_nHeight = nWidth;
 	}
 
-	m_wndInfo.SetVideoResolution(0, 0); //  (nWidth, nHeight);
+	m_wndInfo.SetVideoResolution(nWidth, nHeight);
 }
 
 void CAGVideoWnd::GetVideoResolution(UINT *nWidth, UINT *nHeight)

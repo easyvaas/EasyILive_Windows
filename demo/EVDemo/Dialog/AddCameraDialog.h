@@ -1,5 +1,7 @@
 #pragma once
-
+#include <string>
+#include <map>
+#include <vector>
 #define MAX_DEVICESCOUNT	20
 // 摄像头;
 class CAddCameraDialog : public CDialogEx
@@ -50,8 +52,26 @@ private:
 	SceneStatus			m_staScene;
 
 	// 设备列表;
-	DevicesInfo*		m_pArrVedioDev;
-	DevicesInfo*		m_pArrAudioDev;
+ 	DevicesInfo*		m_pArrVedioDev;
+ 	DevicesInfo*		m_pArrAudioDev;
+	std::map<std::string, std::string> m_mapVideo;
+
+	std::map<std::string, std::string> m_mapAudio;
+	std::map<std::string,std::vector<SIZE> > m_mapVideoResolutions;
+	//为了和组合框的索引对应
+ 	std::vector<std::string> m_vecVideoIds;
+	std::vector<SIZE>  m_vecResolutions; //
+// 	std::vector<std::string> m_vecRecordingIds;
+
 	int					m_iVedioDevCount;
 	int					m_iAudioDevCount;
+
+	EV_VIDEO_PROFILE_TYPE m_curVideoProfile;
+public:
+	afx_msg void OnSelchangeCameraVideoCombo();
+	//用户选中的分辨率索引
+	int m_curResolutionIndex = 0;
+	//用户选中的fps索引
+	int m_curFpsIndex = 0;
+	bool bChangedVideoProfile;
 };

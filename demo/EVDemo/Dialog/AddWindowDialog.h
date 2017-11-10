@@ -6,7 +6,7 @@ class CAddWindowDialog : public CDialogEx
 	DECLARE_DYNAMIC(CAddWindowDialog)
 
 public:
-	CAddWindowDialog(SceneStatus status = SCENE_ADD, CWnd* pParent = NULL);
+	CAddWindowDialog(GameInfo* info, int info_count, SceneStatus status = SCENE_ADD, CWnd* pParent = NULL);
 	virtual ~CAddWindowDialog();
 
 	// 对话框数据;
@@ -23,7 +23,7 @@ public:
 	afx_msg void OnBnClickedGameUpdateButton();
 	virtual void OnOK();
 	virtual void OnCancel();
-
+	int cursel = -1;
 protected:
 	void AddWindowOpts();
 	void RemoveAllGameOpts();

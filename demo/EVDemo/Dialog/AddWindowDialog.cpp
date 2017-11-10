@@ -1,22 +1,25 @@
 #include "stdafx.h"
 #include "Demo.h"
 #include "AddWindowDialog.h"
-
+#include "ChatUserDlg.h"
+#include "AGEventDef.h"
 // CAddWindowDialog 对话框
 IMPLEMENT_DYNAMIC(CAddWindowDialog, CDialogEx)
 
-CAddWindowDialog::CAddWindowDialog(SceneStatus status/* = SCENE_ADD*/, CWnd* pParent /*=NULL*/)
+CAddWindowDialog::CAddWindowDialog(GameInfo* info, int info_count, SceneStatus status/* = SCENE_ADD*/, CWnd* pParent /*=NULL*/)
 : CDialogEx(CAddWindowDialog::IDD, pParent)
 {
 	m_staScene = status;
-	m_pWindowOpts = new GameInfo[MAX_GAMEOPTS_COUNT];
-	m_iOptsCount = 0;
+	//m_pWindowOpts = new GameInfo[MAX_GAMEOPTS_COUNT];
+	m_iOptsCount = info_count;
+	m_pWindowOpts = info;
 }
 
 CAddWindowDialog::~CAddWindowDialog()
 {
-	delete[]m_pWindowOpts;
 	m_pWindowOpts = NULL;
+// 	delete[]m_pWindowOpts;
+// 	m_pWindowOpts = NULL;
 }
 
 void CAddWindowDialog::DoDataExchange(CDataExchange* pDX)
@@ -63,7 +66,7 @@ void CAddWindowDialog::RemoveAllGameOpts()
 
 void CAddWindowDialog::AddWindowOpts()
 {
-	AfxGetEVLive()->GetGameOptions(m_pWindowOpts, m_iOptsCount);
+	//AfxGetEVLive()->GetGameOptions(m_pWindowOpts, m_iOptsCount);
 
 	// 先删除再添加;
 	for (int i = 0; i < m_iOptsCount; i++)
@@ -79,22 +82,6 @@ void CAddWindowDialog::AddWindowOpts()
 void CAddWindowDialog::InitData()
 {
 	SetDlgItemText(IDOK, _T("确定"));
-
-	GameInfo* pScene = new GameInfo();
-	AfxGetEVLive()->GetSelSceneInfo(pScene);
-
-	// 视频、音频;
-	CStringA strTitle = pScene->strTitle;
-	CStringA strClass = pScene->strClass;
-	for (int i = 0; i < m_iOptsCount; i++)
-	{
-		if ((0 == strClass.Compare(m_pWindowOpts[i].strClass)) &&
-			(0 == strTitle.Compare(m_pWindowOpts[i].strTitle)))
-		{
-			m_cmbWindowOpts.SetCurSel(i);
-			break;
-		}
-	}
 }
 
 void CAddWindowDialog::OnOK()
@@ -107,26 +94,10 @@ void CAddWindowDialog::OnOK()
 	}
 
 	WindowsInfo infoWindows(m_pWindowOpts[iSel]);
+	cursel = iSel;
 	switch (m_staScene)
 	{
-		case SCENE_ADD:
-		{
-			if (!AfxGetEVLive()->AddScene(&infoWindows))
-			{
-				//MessageBox(EV_GetErrorInfo().c_str());
-				return;
-			}
-		}
-		break;
-	case SCENE_MODIFY:
-		{
-			if (!AfxGetEVLive()->ModifyScene(&infoWindows))
-			{
-				//MessageBox(EV_GetErrorInfo().c_str());
-				return;
-			}
-		}
-		break;
+
 	default:
 		break;
 	}

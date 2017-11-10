@@ -8,10 +8,10 @@
 #include <vector>
 #include "EVLiveLock.h"
 #include <set>
-
 // CChatUserDlg 对话框
 
 #define WNDVIDEO_COUNT 6	// 目前最多支持7路(包括自己，即该数值最大为6);
+
 
 class CCompositionLayout 
 {
@@ -19,21 +19,27 @@ public:
 	CCompositionLayout();
 	~CCompositionLayout();
 
-	void UserJoinChannel(unsigned int uid);
+	void UserJoinChannel(unsigned int uid, bool bBroadCast=false);
 	void UserLeaveChannel(unsigned int uid);
-	void Clear();
-	void SetCanvasAttribute(int width, int height, const char* bgColor = NULL, const char* appData = NULL, int appDataLen = 0);
+	void BroadCastLeaveChannel(unsigned int uid);
+	void ChangeLayout(unsigned int uid);
+	void SetCanvasAttribute(SIZE szCanvasLayout , const char* bgColor = NULL, const char* appData = NULL, int appDataLen = 0);
 private:
 	void _SetCompositionLayout();
 private:
 	CLiveLockEx m_lock;
 	std::vector<unsigned int> m_vec_uid;
+	std::set<unsigned int> m_set_uid;
+
 	//std::vector<>
 	//维护布局的变化
 	EVVideoCompositingLayout m_layout;
 
 	int m_width;
 	int m_height;
+    
+	int m_realWidth;
+	int m_realHeight;
 	//3ha
 	const int cols = 2;
 	const int rows = 3;
@@ -41,6 +47,8 @@ private:
 	const int max_rows = rows;
 	EVVideoCompositingLayout::Region regions[7];//最多7个
 };
+
+///////////////////////////////////////////////////////////////////
 
 class CChatUserDlg : public CDialogEx
 {
@@ -58,6 +66,13 @@ protected:
 
 	DECLARE_MESSAGE_MAP()
 private:
+
+	enum AGORA_FRAME_TYPE
+	{
+		MAX_AGORA_FRAME_720 = 0,
+		MAX_AGORA_FRAME_360,
+		MAX_AGORA_FRAME_180
+	};
 	void InitCtrls();
 	void InitData();
 	void InitVideoWnd();
@@ -75,11 +90,6 @@ private:
 	void RebindVideoWnd();
 
 	void _EVJoinChannel(std::string channel_id); // 频道id  旁路推流地址(主播不需要设置旁路推流地址)
-// 	void _OnAudienceJoinChannel(CString channel_id); //请求连麦
-// 	void _OnBroadcasterJoinChannel(CString channel_id);
-	//主播需要创建
-	void _CreateChannel(CString channel_id);
-
 
 	static DWORD WINAPI Thread_StartCommHeart(LPVOID lpvoid);
 private:
@@ -94,7 +104,10 @@ public:
 
 private:
 	CEdit m_editChatRoom;
-//	CAGVideoWnd		m_wndLocal;
+	const int LocalWndWidth = 160;
+	const int LocalWndheight = 90;
+
+	CAGVideoWnd		m_wndLocal;
 	CAGVideoWnd		m_wndVideo[WNDVIDEO_COUNT];
 	CRect			m_rcVideoArea;
 	CRect			m_rcChildVideoArea;
@@ -118,7 +131,7 @@ private:
 
 	CList<AGVIDEO_WNDINFO>	m_listWndInfo;
 
-	afx_msg LRESULT OnAddToLive(WPARAM wParam, LPARAM lParam);
+	//afx_msg LRESULT OnAddToLive(WPARAM wParam, LPARAM lParam);
 
 	EV_CLIENT_ROLE_TYPE m_client_role;
 	EVLive_User_Role m_user_choose_role;
@@ -140,6 +153,13 @@ private:
 
 	DWORD   m_nReceiveBadNetCount = 0; //接收网络太差104警告次数
 	const   DWORD   MAX_RECV_BADNET_COUNT = 5;
+	AGORA_FRAME_TYPE     m_nCommType = MAX_AGORA_FRAME_720;
+
+	HANDLE m_hMonitorThread = NULL;
+
+	static unsigned int WINAPI MonitorShareWindow(LPVOID lpVoid);
+
+	std::string m_canvasBgCaolor = "#FF0000";
 public:
 
 	virtual BOOL OnInitDialog();
@@ -158,6 +178,7 @@ public:
 	afx_msg LRESULT OnEIDFirstRemoteFrameDecoded(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnEIDUserJoined(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnEIDUserOffline(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnEIDUserMuteVideo(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnEIDConnectionLost(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnEIDVideoDeviceChanged(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnRemoteVideoStat(WPARAM wParam, LPARAM lParam);
@@ -167,19 +188,38 @@ public:
 	CComboBox m_cmbRole;
 	afx_msg void OnSelchangeComboRole();
 
-
-	afx_msg LRESULT OnEIDCreateChannel(WPARAM wParam, LPARAM lParam);
-	afx_msg LRESULT OnEIDUserAuth(WPARAM wParam, LPARAM lParam);
-	afx_msg LRESULT OnEIDEVJoinChannel(WPARAM wParam, LPARAM lParam);
-	afx_msg LRESULT OnEIDEVLeaveChannel(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnEIDBadNetWork(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnEIDCommHeartBeat(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnEIDStartShare(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnEIDStartScreenCapture(WPARAM wParam, LPARAM lParam);//截屏
+	afx_msg LRESULT OnEIDStartLocalPreview(WPARAM wParam, LPARAM lParam);//截屏
+	
+	afx_msg LRESULT OnEIDShareWindowChanged(WPARAM wParam, LPARAM lParam);//截屏
 
-	
-	
+	afx_msg LRESULT OnEIDChangedVideoProfile(WPARAM wParam, LPARAM lParam);
 	CButton m_chkConfigurePublisher;
-	afx_msg void OnBnClickedCheckConfigurepublisher();
+
 	CEdit m_edtPushUrlToOther;
 	CStatic m_staJoinChannelInfo;
 	CButton m_btnJoinChannel;
 	CButton m_btnLeaveChannel;
+	
+	afx_msg void OnClickedRadio720();
+	afx_msg void OnRadio360();
+	afx_msg void OnRadio180();
+	CButton m_radio720;
+
+	HWND m_hWndTestWnd = NULL;
+	CEdit m_edtUID;
+	afx_msg void OnBnClickedButtonStopShare();
+
+	RECT m_rcDesktop;
+	SIZE m_szDeskTop;
+
+	SIZE m_szMaxRemoteLayoutResolution;//旁路推流，画布的最大分辨率
+	afx_msg void OnBnClickedButtonEnableVideo();
+	afx_msg void OnBnClickedButtonMuteVideo();
+	
 };
+extern HWND g_ChatUserWnd;
+extern HWND g_ShareWnd;
